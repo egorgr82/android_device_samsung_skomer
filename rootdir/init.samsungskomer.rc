@@ -15,6 +15,7 @@ on init
     mkdir /mnt/media_rw/sdcard1 0775 system system
 
     export EXTERNAL_STORAGE /storage/emulated/legacy
+    export SECONDARY_STORAGE /storage/sdcard1
     export EMULATED_STORAGE_SOURCE /mnt/shell/emulated
     export EMULATED_STORAGE_TARGET /storage/emulated
 
@@ -439,12 +440,8 @@ on boot
     class_start default
 
     
-on property:sys.powerctl=*
-    powerctl ${sys.powerctl}
 
 # system server cannot write to /proc/sys files, so proxy it through init
-on property:sys.sysctl.extra_free_kbytes=*
-    write /proc/sys/vm/extra_free_kbytes ${sys.sysctl.extra_free_kbytes}
  
 
 
@@ -524,7 +521,7 @@ service p2p_supplicant /system/bin/wpa_supplicant \
     disabled
     oneshot
 
-service dhcpcd_wlan0 /system/bin/dhcpcd -ABKL
+service dhcpcd_wlan0 /system/bin/dhcpcd -aABDKL
     class main
     disabled
     oneshot
