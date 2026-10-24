@@ -189,3 +189,12 @@ PRODUCT_AAPT_PREF_CONFIG := hdpi
 
 # We have enough storage space to hold precise GC data
 PRODUCT_TAGS += dalvik.gc.type-precise
+
+# Wi-Fi userspace and audio HAL (from golden cm-12.1)
+PRODUCT_PACKAGES += \
+    libwpa_client \
+    hostapd \
+    dhcpcd.conf \
+    wpa_supplicant \
+    wpa_supplicant.conf \
+    audio.r_submix.default
