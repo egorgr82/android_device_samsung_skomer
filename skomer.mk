@@ -198,3 +198,15 @@ PRODUCT_PACKAGES += \
     wpa_supplicant \
     wpa_supplicant.conf \
     audio.r_submix.default
+
+# Prebuilt libs that golden also ships as prebuilts (hardware/u8500 is not built here)
+PRODUCT_COPY_FILES += \
+    $(LOCAL_PATH)/prebuilt/lib/libasound.so:system/lib/libasound.so \
+    $(LOCAL_PATH)/prebuilt/lib/libblt_hw.so:system/lib/libblt_hw.so \
+    $(LOCAL_PATH)/prebuilt/lib/libomxil-bellagio.so:system/lib/libomxil-bellagio.so
+
+# Media codecs, 5.1 style (same as golden)
+PRODUCT_COPY_FILES += \
+    frameworks/av/media/libstagefright/data/media_codecs_google_audio.xml:system/etc/media_codecs_google_audio.xml \
+    frameworks/av/media/libstagefright/data/media_codecs_google_telephony.xml:system/etc/media_codecs_google_telephony.xml \
+    $(LOCAL_PATH)/configs/etc/media_codecs_google_video.xml:system/etc/media_codecs_google_video.xml
