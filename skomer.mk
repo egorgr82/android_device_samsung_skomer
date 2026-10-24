@@ -174,8 +174,6 @@ PRODUCT_PACKAGES += \
 
 # Misc packages
 PRODUCT_PACKAGES += \
-    Torch \
-	SamsungServiceMode \
     com.android.future.usb.accessory
 
 # Non-device-specific props
