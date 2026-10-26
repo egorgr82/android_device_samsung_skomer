@@ -210,3 +210,9 @@ PRODUCT_COPY_FILES += \
     frameworks/av/media/libstagefright/data/media_codecs_google_audio.xml:system/etc/media_codecs_google_audio.xml \
     frameworks/av/media/libstagefright/data/media_codecs_google_telephony.xml:system/etc/media_codecs_google_telephony.xml \
     $(LOCAL_PATH)/configs/etc/media_codecs_google_video.xml:system/etc/media_codecs_google_video.xml
+
+# Wi-Fi firmware: this driver asks for names without the _b2 suffix, chip needs the b2 build
+PRODUCT_COPY_FILES += \
+    vendor/samsung/skomer/proprietary/etc/wifi/bcmdhd_sta.bin_b2:system/etc/wifi/bcmdhd_sta.bin \
+    vendor/samsung/skomer/proprietary/etc/wifi/bcmdhd_p2p.bin_b2:system/etc/wifi/bcmdhd_p2p.bin \
+    vendor/samsung/skomer/proprietary/etc/wifi/bcmdhd_apsta.bin_b2:system/etc/wifi/bcmdhd_apsta.bin
