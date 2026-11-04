@@ -305,6 +305,10 @@ on post-fs-data
     # Change permissions for modem_log_relay config file
     chmod 666 /modemfs/trace_auto.conf
 
+    chmod 0771 /cache
+    mkdir /cache/dalvik-cache 0771 system system
+    mkdir /cache/dalvik-cache/arm 0771 system system
+
     # If there is no fs-post-data action in the init.<device>.rc file, you
     # must uncomment this line, otherwise encrypted filesystems
     # won't work.
