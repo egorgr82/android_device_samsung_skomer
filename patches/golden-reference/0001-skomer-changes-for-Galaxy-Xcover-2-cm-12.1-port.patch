@@ -1,0 +1,28 @@
+From 4db4b8efad28beaa9fcb069a71ae8d1af002b99f Mon Sep 17 00:00:00 2001
+From: egorgr82 <60542432+egorgr82@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 20:08:48 +0300
+Subject: [PATCH] skomer: changes for Galaxy Xcover 2 (cm-12.1 port)
+
+---
+ kernel/timeconst.pl | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/timeconst.pl b/kernel/timeconst.pl
+index eb51d76..75bd4f2 100644
+--- a/kernel/timeconst.pl
++++ b/kernel/timeconst.pl
+@@ -369,8 +369,9 @@ if ($hz eq '--can') {
+ 		die "Usage: $0 HZ\n";
+ 	}
+ 
+-	@val = @{$canned_values{$hz}};
+-	if (!defined(@val)) {
++	if (exists($canned_values{$hz})) {
++		@val = @{$canned_values{$hz}};
++	} else {
+ 		@val = compute_values($hz);
+ 	}
+ 	output($hz, @val);
+-- 
+2.7.4
+
