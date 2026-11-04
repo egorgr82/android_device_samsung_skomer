@@ -1,0 +1,214 @@
+From 99ef3209b0b44fd00832c658b8ef435ae6fab32e Mon Sep 17 00:00:00 2001
+From: egorgr82 <60542432+egorgr82@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 14:32:09 +0300
+Subject: [PATCH] skomer: changes for Galaxy Xcover 2 (cm-12.1 port)
+
+Change-Id: I379dc533cebd33dff9f0fabc3ee869ff4adcc499
+---
+ .../internal/policy/impl/PhoneWindowManager.java   | 139 ++++++++++++++++++++-
+ .../server/location/GpsLocationProvider.java       |   4 +-
+ 2 files changed, 139 insertions(+), 4 deletions(-)
+
+diff --git a/policy/src/com/android/internal/policy/impl/PhoneWindowManager.java b/policy/src/com/android/internal/policy/impl/PhoneWindowManager.java
+index 1ef905f..9354be5 100644
+--- a/policy/src/com/android/internal/policy/impl/PhoneWindowManager.java
++++ b/policy/src/com/android/internal/policy/impl/PhoneWindowManager.java
+@@ -2001,7 +2001,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+             mCameraSleepOnRelease = (Settings.System.getIntForUser(resolver,
+                     Settings.System.CAMERA_SLEEP_ON_RELEASE, 0, UserHandle.USER_CURRENT) == 1);
+             mCameraLaunch = (Settings.System.getIntForUser(resolver,
+-                    Settings.System.CAMERA_LAUNCH, 0, UserHandle.USER_CURRENT) == 1);
++                    Settings.System.CAMERA_LAUNCH, 1, UserHandle.USER_CURRENT) == 1);
+             mVolumeWakeScreen = (Settings.System.getIntForUser(resolver,
+                     Settings.System.VOLUME_WAKE_SCREEN, 0, UserHandle.USER_CURRENT) == 1) &&
+                     ((mDeviceHardwareWakeKeys & KEY_MASK_VOLUME) != 0);
+@@ -5183,6 +5183,132 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+      *    or wired headphones) or "remotely" (e.g. on a device using the Cast protocol and
+      *    controlled by this device, or through remote submix).
+      */
++    // ---- Volume key torch (screen off) ----
++    private boolean mVolumeTorchKeyHandled;
++    private PowerManager.WakeLock mVolumeTorchWakeLock;
++
++    private final Runnable mVolumeTorchLongPress = new Runnable() {
++        @Override
++        public void run() {
++            try {
++                android.hardware.TorchManager tm = (android.hardware.TorchManager)
++                        mContext.getSystemService(Context.TORCH_SERVICE);
++                if (tm != null && tm.isAvailable() && !tm.isTorchOn()) {
++                    tm.setTorchEnabled(true);
++                    scheduleVolumeTorchAutoOff();
++                }
++            } catch (Exception e) {
++                Slog.w(TAG, "Volume torch: could not turn torch on", e);
++            }
++        }
++    };
++
++    private final Runnable mVolumeTorchAutoOff = new Runnable() {
++        @Override
++        public void run() {
++            try {
++                android.hardware.TorchManager tm = (android.hardware.TorchManager)
++                        mContext.getSystemService(Context.TORCH_SERVICE);
++                if (tm != null && tm.isTorchOn()) {
++                    tm.setTorchEnabled(false);
++                }
++            } catch (Exception e) {
++                Slog.w(TAG, "Volume torch: auto-off failed", e);
++            }
++        }
++    };
++
++    private void scheduleVolumeTorchAutoOff() {
++        int secs = Settings.System.getInt(mContext.getContentResolver(),
++                "volume_torch_timeout", 300);
++        mHandler.removeCallbacks(mVolumeTorchAutoOff);
++        if (secs > 0) {
++            mHandler.postDelayed(mVolumeTorchAutoOff, secs * 1000L);
++        }
++    }
++
++    // Returns true if the key event was consumed.
++    private boolean handleVolumeTorchKey(boolean down, int repeatCount) {
++        if (Settings.System.getInt(mContext.getContentResolver(),
++                "volume_torch_enabled", 1) == 0) {
++            return false;
++        }
++        android.hardware.TorchManager tm = (android.hardware.TorchManager)
++                mContext.getSystemService(Context.TORCH_SERVICE);
++        if (tm == null || !tm.isTorchSupported()) {
++            return false;
++        }
++        if (down) {
++            if (repeatCount > 0) {
++                return mVolumeTorchKeyHandled;
++            }
++            mVolumeTorchKeyHandled = true;
++            mHandler.removeCallbacks(mVolumeTorchLongPress);
++            if (tm.isTorchOn()) {
++                mHandler.removeCallbacks(mVolumeTorchAutoOff);
++                tm.setTorchEnabled(false);
++            } else {
++                if (mVolumeTorchWakeLock == null) {
++                    PowerManager pm = (PowerManager) mContext.getSystemService(
++                            Context.POWER_SERVICE);
++                    mVolumeTorchWakeLock = pm.newWakeLock(
++                            PowerManager.PARTIAL_WAKE_LOCK, "PhoneWindowManager.volumeTorch");
++                    mVolumeTorchWakeLock.setReferenceCounted(false);
++                }
++                mVolumeTorchWakeLock.acquire(2000);
++                mHandler.postDelayed(mVolumeTorchLongPress, 1000);
++            }
++            return true;
++        } else {
++            mHandler.removeCallbacks(mVolumeTorchLongPress);
++            boolean consumed = mVolumeTorchKeyHandled;
++            mVolumeTorchKeyHandled = false;
++            return consumed;
++        }
++    }
++
++    // ---- Camera key: long press launches the camera ----
++    private static final int CAMERA_KEY_LONG_PRESS_MS = 1500;
++
++    private final Runnable mCameraKeyLongPress = new Runnable() {
++        @Override
++        public void run() {
++            try {
++                if (!mCameraLaunch) {
++                    return;
++                }
++                if (!mPowerManager.isInteractive()) {
++                    mPowerManager.wakeUp(SystemClock.uptimeMillis());
++                }
++                WindowState focused = mFocusedWindow;
++                String pkg = (focused != null) ? focused.getOwningPackage() : null;
++                if (pkg != null && pkg.startsWith("com.android.camera")) {
++                    return; // already in the camera
++                }
++                boolean secure = keyguardOn();
++                Intent intent = new Intent(secure
++                        ? android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE
++                        : android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA);
++                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
++                        | Intent.FLAG_ACTIVITY_CLEAR_TOP);
++                mContext.startActivityAsUser(intent, UserHandle.CURRENT);
++            } catch (Exception e) {
++                Slog.w(TAG, "Camera key long press: could not launch camera", e);
++            }
++        }
++    };
++
++    private void handleCameraKeyLongPress(boolean down, int repeatCount) {
++        if (down) {
++            if (repeatCount == 0) {
++                mHandler.removeCallbacks(mCameraKeyLongPress);
++                mHandler.postDelayed(mCameraKeyLongPress, CAMERA_KEY_LONG_PRESS_MS);
++            }
++        } else {
++            mHandler.removeCallbacks(mCameraKeyLongPress);
++        }
++    }
++
+     private boolean isMusicActive() {
+         final AudioManager am = (AudioManager)mContext.getSystemService(Context.AUDIO_SERVICE);
+         if (am == null) {
+@@ -5410,6 +5536,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+             }
+         }
+ 
++        if (keyCode == KeyEvent.KEYCODE_CAMERA) {
++            handleCameraKeyLongPress(down, event.getRepeatCount());
++        }
++
+         // Handle special keys.
+         switch (keyCode) {
+             case KeyEvent.KEYCODE_VOLUME_DOWN:
+@@ -5493,6 +5623,11 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+                 if ((result & ACTION_PASS_TO_USER) == 0) {
+                     boolean mayChangeVolume = false;
+ 
++                    if (!interactive && !isMusicActive()
++                            && handleVolumeTorchKey(down, event.getRepeatCount())) {
++                        break;
++                    }
++
+                     if (isMusicActive()) {
+                         if (mVolBtnMusicControls) {
+                             // Detect long key presses.
+@@ -5572,7 +5707,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+                 } else {
+                     mHandler.removeMessages(MSG_CAMERA_LONG_PRESS);
+                     // Consume key up events of long presses only.
+-                    if (mIsLongPress && mCameraLaunch) {
++                    if (false && mIsLongPress && mCameraLaunch) { // skomer: replaced by mCameraKeyLongPress
+                         Intent intent;
+                         if (keyguardActive) {
+                             intent = new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE);
+diff --git a/services/core/java/com/android/server/location/GpsLocationProvider.java b/services/core/java/com/android/server/location/GpsLocationProvider.java
+index 4e58c6c..a903e17 100644
+--- a/services/core/java/com/android/server/location/GpsLocationProvider.java
++++ b/services/core/java/com/android/server/location/GpsLocationProvider.java
+@@ -1137,7 +1137,7 @@ public class GpsLocationProvider implements LocationProviderInterface {
+                 && mSuplServerPort > TCP_MIN_PORT
+                 && mSuplServerPort <= TCP_MAX_PORT
+                 && !mLegacyGpsHAL) {
+-            native_set_agps_server(AGPS_TYPE_SUPL, mSuplServerHost, mSuplServerPort);
++            /* disabled for STE GPS: native_set_agps_server(AGPS_TYPE_SUPL, mSuplServerHost, mSuplServerPort); */
+         }
+     }
+ 
+@@ -1192,7 +1192,7 @@ public class GpsLocationProvider implements LocationProviderInterface {
+ 
+             // TODO: remove the following native calls if we can make sure they are redundant.
+             if (mSuplServerHost != null) {
+-                native_set_agps_server(AGPS_TYPE_SUPL, mSuplServerHost, mSuplServerPort);
++                /* disabled for STE GPS: native_set_agps_server(AGPS_TYPE_SUPL, mSuplServerHost, mSuplServerPort); */
+             }
+             if (mC2KServerHost != null) {
+                 native_set_agps_server(AGPS_TYPE_C2K, mC2KServerHost, mC2KServerPort);
+-- 
+2.7.4
+

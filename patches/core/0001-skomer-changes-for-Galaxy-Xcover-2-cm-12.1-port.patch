@@ -1,0 +1,43 @@
+From 246d3c54800d2af30b955333179ac8c98372cd35 Mon Sep 17 00:00:00 2001
+From: egorgr82 <60542432+egorgr82@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 14:32:08 +0300
+Subject: [PATCH] skomer: changes for Galaxy Xcover 2 (cm-12.1 port)
+
+Change-Id: Idfe39e6e66c1b48e7b6308138e2fc29aeab28953
+---
+ libcutils/android_reboot.c | 2 +-
+ rootdir/init.rc            | 5 +++--
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/libcutils/android_reboot.c b/libcutils/android_reboot.c
+index 30738d7..67d2cd3 100644
+--- a/libcutils/android_reboot.c
++++ b/libcutils/android_reboot.c
+@@ -58,7 +58,7 @@ static int remount_ro_done(void)
+         mount_dir[255] = 0;
+         mount_type[255] = 0;
+         mount_opts[255] = 0;
+-        if ((match == 6) && !strncmp(mount_dev, "/dev/block", 10) && strstr(mount_opts, "rw,")) {
++        if ((match == 6) && !strncmp(mount_dev, "/dev/block", 10) && strstr(mount_opts, "rw,") && strcmp(mount_type, "j4fs")) {
+             found_rw_fs = 1;
+             break;
+         }
+diff --git a/rootdir/init.rc b/rootdir/init.rc
+index 001ab13..0df035f 100644
+--- a/rootdir/init.rc
++++ b/rootdir/init.rc
+@@ -289,8 +289,9 @@ on post-fs-data
+     mkdir /data/tombstones 0771 system system
+ 
+     # create dalvik-cache, so as to enforce our permissions
+-    mkdir /data/dalvik-cache 0771 root root
+-    mkdir /data/dalvik-cache/profiles 0711 system system
++    mkdir /cache/dalvik-cache 0771 root root
++    mkdir /cache/dalvik-cache/profiles 0711 system system
++    symlink /cache/dalvik-cache /data/dalvik-cache
+ 
+     # create resource-cache and double-check the perms
+     mkdir /data/resource-cache 0771 system system
+-- 
+2.7.4
+

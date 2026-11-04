@@ -1,0 +1,74 @@
+From 5a68d5ae6f0943634de9ccca4baf7ab40ddebfa2 Mon Sep 17 00:00:00 2001
+From: egorgr82 <60542432+egorgr82@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 20:08:46 +0300
+Subject: [PATCH] skomer: changes for Galaxy Xcover 2 (cm-12.1 port)
+
+Change-Id: I07c831a208e1a4fd08fc62fa780936ea1d2651c8
+---
+ src/com/android/phone/PhoneUtils.java | 37 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+
+diff --git a/src/com/android/phone/PhoneUtils.java b/src/com/android/phone/PhoneUtils.java
+index 86b2689..f0c2c03 100644
+--- a/src/com/android/phone/PhoneUtils.java
++++ b/src/com/android/phone/PhoneUtils.java
+@@ -1875,6 +1875,39 @@ public class PhoneUtils {
+         }
+     }
+ 
++    /**
++     * Reset the audio stream volume to fix the low in-call volume bug.
++     *
++     * Due to a bug in the OMX system, the audio stream volume is set to 0 after it was set to it's default volume.
++     * Calling PhoneUtils.resetAudioStreamVolume() triggers the system to reset the volume.
++     *
++     * This should be called on every place where is switched between audio modes.
++     *
++     * REMARK: I think it only appears on the voice call stream, but to be sure I also do it on the bluetooth stream.
++     */
++    static void resetAudioStreamVolume() {
++        PhoneGlobals app = PhoneGlobals.getInstance();
++        BluetoothManager btManager = app.getBluetoothManager();
++        AudioManager audioManager = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
++        // determine actual streamType
++        int streamType = AudioManager.STREAM_VOICE_CALL;
++        if (btManager.isBluetoothHeadsetAudioOn()) {
++            streamType = AudioManager.STREAM_BLUETOOTH_SCO;
++        }
++        // determine volume and 1 level lower volume (lowest level can be 0)
++        int volume = audioManager.getStreamVolume(streamType);
++        int lowerVolume = volume - 1;
++        if (lowerVolume < 0) {
++            lowerVolume = 0;
++        }
++        log("resetAudioStreamVolume (streamType=" + streamType + ", streamVolume=" + volume + ")...");
++        // It's important to change it to another volume before restoring the original volume,
++        // otherwise the volume change will NOT be triggered!!
++        audioManager.setStreamVolume(streamType, lowerVolume, 0);
++        audioManager.setStreamVolume(streamType, volume, 0);
++    }
++
++
+     static boolean isInEmergencyCall(CallManager cm) {
+         for (Connection cn : cm.getActiveFgCall().getConnections()) {
+             if (PhoneNumberUtils.isLocalEmergencyNumber(PhoneGlobals.getInstance(),
+@@ -1894,12 +1927,16 @@ public class PhoneUtils {
+     }
+ 
+     /* package */ static void setAudioMode() {
++
++	resetAudioStreamVolume();
+     }
+ 
+     /**
+      * Sets the audio mode per current phone state.
+      */
+     /* package */ static void setAudioMode(CallManager cm) {
++
++	resetAudioStreamVolume();
+     }
+ 
+     /**
+-- 
+2.7.4
+

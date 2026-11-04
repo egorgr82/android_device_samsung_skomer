@@ -1,0 +1,58 @@
+From 8f3ac5e220da1a3676cc8a9ecebce7d25b93fc2d Mon Sep 17 00:00:00 2001
+From: egorgr82 <60542432+egorgr82@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 14:32:09 +0300
+Subject: [PATCH] skomer: changes for Galaxy Xcover 2 (cm-12.1 port)
+
+Change-Id: Iad6a73e3195c244602e6f1de46c2ecc3e81bfeb9
+---
+ src/com/android/camera/PhotoModule.java | 20 +++++++++++++++++++-
+ src/com/android/camera/VideoModule.java |  2 +-
+ 2 files changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/src/com/android/camera/PhotoModule.java b/src/com/android/camera/PhotoModule.java
+index b4b5ee7..0a3fce3 100644
+--- a/src/com/android/camera/PhotoModule.java
++++ b/src/com/android/camera/PhotoModule.java
+@@ -1503,7 +1503,25 @@ public class PhotoModule
+ 
+     @Override
+     public void onShutterButtonFocus(boolean pressed) {
+-        // Do nothing. We don't support half-press to focus anymore.
++        // skomer: restore half-press to focus (focus at the center of the preview).
++        if (!pressed) {
++            return;
++        }
++        if (mPaused || mCameraDevice == null || !mFirstTimeInitialized
++                || mCameraState == SNAPSHOT_IN_PROGRESS
++                || mCameraState == SWITCHING_CAMERA
++                || mCameraState == PREVIEW_STOPPED
++                || mFocusManager == null) {
++            return;
++        }
++        if (!mFocusAreaSupported && !mMeteringAreaSupported) {
++            return;
++        }
++        android.graphics.Rect r = mFocusManager.getPreviewRect();
++        if (r == null || r.width() == 0 || r.height() == 0) {
++            return;
++        }
++        mFocusManager.onSingleTapUp(r.centerX(), r.centerY());
+     }
+ 
+     @Override
+diff --git a/src/com/android/camera/VideoModule.java b/src/com/android/camera/VideoModule.java
+index 7ba630f..f0ca820 100644
+--- a/src/com/android/camera/VideoModule.java
++++ b/src/com/android/camera/VideoModule.java
+@@ -1076,7 +1076,7 @@ public class VideoModule extends CameraModule
+     public boolean onKeyUp(int keyCode, KeyEvent event) {
+         switch (keyCode) {
+             case KeyEvent.KEYCODE_CAMERA:
+-                onShutterButtonClick();
++                // the shutter click is already handled in onKeyDown
+                 return true;
+             case KeyEvent.KEYCODE_MENU:
+                 // Consume menu button presses during capture.
+-- 
+2.7.4
+

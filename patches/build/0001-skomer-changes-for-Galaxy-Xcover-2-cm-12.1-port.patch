@@ -1,0 +1,47 @@
+From 577cca27b8c2a26b35b897da3a45ea26f5edb53f Mon Sep 17 00:00:00 2001
+From: egorgr82 <60542432+egorgr82@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 14:32:10 +0300
+Subject: [PATCH] skomer: changes for Galaxy Xcover 2 (cm-12.1 port)
+
+Change-Id: I7fae8040b7608ce0c87b51913a4827fc825591ba
+---
+ core/main.mk | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/core/main.mk b/core/main.mk
+index ce910fb..2a9d6c9 100644
+--- a/core/main.mk
++++ b/core/main.mk
+@@ -190,7 +190,7 @@ endif
+ ifeq ($(requires_openjdk), true)
+ # The user asked for java7 openjdk, so check that the host
+ # java version is really openjdk
+-ifeq ($(shell echo '$(java_version_str)' | grep -i openjdk),)
++ifeq (false, true)
+ $(info ************************************************************)
+ $(info You asked for an OpenJDK 7 build but your version is)
+ $(info $(java_version_str).)
+@@ -358,7 +358,7 @@ ifneq (,$(user_variant))
+ 
+ else # !user_variant
+   # Turn on checkjni for non-user builds.
+-  ADDITIONAL_BUILD_PROPERTIES += ro.kernel.android.checkjni=1
++#  ADDITIONAL_BUILD_PROPERTIES += ro.kernel.android.checkjni=1
+   # Set device insecure for non-user builds.
+   ADDITIONAL_DEFAULT_PROPERTIES += ro.secure=0
+   # Allow mock locations by default for non user builds
+@@ -387,9 +387,9 @@ ifneq ($(filter ro.setupwizard.mode=ENABLED, $(call collapse-pairs, $(ADDITIONAL
+ endif
+ ifndef is_sdk_build
+   # Don't even verify the image on eng builds to speed startup
+-  ADDITIONAL_BUILD_PROPERTIES += dalvik.vm.image-dex2oat-filter=verify-none
++#  ADDITIONAL_BUILD_PROPERTIES += dalvik.vm.image-dex2oat-filter=verify-none
+   # Don't compile apps on eng builds to speed startup
+-  ADDITIONAL_BUILD_PROPERTIES += dalvik.vm.dex2oat-filter=interpret-only
++#  ADDITIONAL_BUILD_PROPERTIES += dalvik.vm.dex2oat-filter=interpret-only
+ endif
+ endif
+ 
+-- 
+2.7.4
+

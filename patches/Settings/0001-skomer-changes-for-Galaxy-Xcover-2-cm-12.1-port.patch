@@ -1,0 +1,141 @@
+From 9f4dd2d29e83ef6fbd736bdb28f1a0f6ed843449 Mon Sep 17 00:00:00 2001
+From: egorgr82 <60542432+egorgr82@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 14:32:09 +0300
+Subject: [PATCH] skomer: changes for Galaxy Xcover 2 (cm-12.1 port)
+
+Change-Id: I86c5b986f94b249694becf32b67cfd42f0bf7b52
+---
+ res/values/skomer_strings.xml                      | 20 ++++++++++
+ res/xml/button_settings.xml                        | 23 ++++++++---
+ .../cyanogenmod/SystemSettingListPreference.java   | 46 ++++++++++++++++++++++
+ 3 files changed, 83 insertions(+), 6 deletions(-)
+ create mode 100644 res/values/skomer_strings.xml
+ create mode 100644 src/com/android/settings/cyanogenmod/SystemSettingListPreference.java
+
+diff --git a/res/values/skomer_strings.xml b/res/values/skomer_strings.xml
+new file mode 100644
+index 0000000..c2e62a2
+--- /dev/null
++++ b/res/values/skomer_strings.xml
+@@ -0,0 +1,20 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="skomer_volume_torch_title">Flashlight on long press</string>
++    <string name="skomer_volume_torch_summary">With the screen off, hold a volume key to turn the flashlight on and press a volume key to turn it off</string>
++    <string name="skomer_volume_torch_timeout_title">Flashlight auto-off</string>
++    <string-array name="skomer_volume_torch_timeout_entries">
++        <item>Never</item>
++        <item>After 1 minute</item>
++        <item>After 5 minutes</item>
++        <item>After 10 minutes</item>
++        <item>After 30 minutes</item>
++    </string-array>
++    <string-array name="skomer_volume_torch_timeout_values">
++        <item>0</item>
++        <item>60</item>
++        <item>300</item>
++        <item>600</item>
++        <item>1800</item>
++    </string-array>
++</resources>
+diff --git a/res/xml/button_settings.xml b/res/xml/button_settings.xml
+index 6acffc3..86cf6bb 100644
+--- a/res/xml/button_settings.xml
++++ b/res/xml/button_settings.xml
+@@ -225,17 +225,12 @@
+             android:title="@string/button_wake_title"
+             android:defaultValue="false" />
+ 
+-        <com.android.settings.cyanogenmod.SystemSettingSwitchPreference
+-            android:key="camera_sleep_on_release"
+-            android:title="@string/camera_sleep_on_release_title"
+-            android:summary="@string/camera_sleep_on_release_summary"
+-            android:defaultValue="false" />
+ 
+         <com.android.settings.cyanogenmod.SystemSettingSwitchPreference
+             android:key="camera_launch"
+             android:title="@string/camera_launch_title"
+             android:summary="@string/camera_launch_summary"
+-            android:defaultValue="false" />
++            android:defaultValue="true" />
+ 
+     </PreferenceCategory>
+ 
+@@ -251,6 +246,22 @@
+             android:defaultValue="false" />
+ 
+         <com.android.settings.cyanogenmod.SystemSettingSwitchPreference
++            android:key="volume_torch_enabled"
++            android:title="@string/skomer_volume_torch_title"
++            android:summary="@string/skomer_volume_torch_summary"
++            android:defaultValue="true" />
++
++        <com.android.settings.cyanogenmod.SystemSettingListPreference
++            android:key="volume_torch_timeout"
++            android:title="@string/skomer_volume_torch_timeout_title"
++            android:dialogTitle="@string/skomer_volume_torch_timeout_title"
++            android:summary="%s"
++            android:dependency="volume_torch_enabled"
++            android:entries="@array/skomer_volume_torch_timeout_entries"
++            android:entryValues="@array/skomer_volume_torch_timeout_values"
++            android:defaultValue="300" />
++
++        <com.android.settings.cyanogenmod.SystemSettingSwitchPreference
+             android:key="volbtn_music_controls"
+             android:title="@string/volbtn_music_controls_title"
+             android:summary="@string/volbtn_music_controls_summary"
+diff --git a/src/com/android/settings/cyanogenmod/SystemSettingListPreference.java b/src/com/android/settings/cyanogenmod/SystemSettingListPreference.java
+new file mode 100644
+index 0000000..8ae28fb
+--- /dev/null
++++ b/src/com/android/settings/cyanogenmod/SystemSettingListPreference.java
+@@ -0,0 +1,46 @@
++package com.android.settings.cyanogenmod;
++
++import android.content.Context;
++import android.preference.ListPreference;
++import android.provider.Settings;
++import android.util.AttributeSet;
++
++/** ListPreference that stores its integer value in Settings.System. */
++public class SystemSettingListPreference extends ListPreference {
++    public SystemSettingListPreference(Context context, AttributeSet attrs) {
++        super(context, attrs);
++    }
++
++    public SystemSettingListPreference(Context context) {
++        super(context);
++    }
++
++    private static int toInt(String s, int def) {
++        try {
++            return Integer.parseInt(s);
++        } catch (Exception e) {
++            return def;
++        }
++    }
++
++    @Override
++    protected boolean persistString(String value) {
++        if (value == null) {
++            return false;
++        }
++        return Settings.System.putInt(getContext().getContentResolver(), getKey(),
++                toInt(value, 0));
++    }
++
++    @Override
++    protected String getPersistedString(String defaultReturnValue) {
++        return String.valueOf(Settings.System.getInt(getContext().getContentResolver(),
++                getKey(), toInt(defaultReturnValue, 0)));
++    }
++
++    @Override
++    protected void onSetInitialValue(boolean restoreValue, Object defaultValue) {
++        String def = defaultValue != null ? defaultValue.toString() : null;
++        setValue(getPersistedString(def));
++    }
++}
+-- 
+2.7.4
+

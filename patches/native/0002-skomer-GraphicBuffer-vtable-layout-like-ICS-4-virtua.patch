@@ -1,0 +1,33 @@
+From b8172f0113abc2e96b028af557fb9bd3a7cdecee Mon Sep 17 00:00:00 2001
+From: Egor <egor@example.com>
+Date: Sat, 31 Oct 2026 15:33:16 +0300
+Subject: [PATCH 2/3] skomer: GraphicBuffer vtable layout like ICS (4 virtuals
+ before dtor)
+
+Change-Id: Iefb88f428fe006a73f7ae6873008b8335ffad779
+---
+ include/ui/GraphicBuffer.h | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/include/ui/GraphicBuffer.h b/include/ui/GraphicBuffer.h
+index b7a5a24..539e2a9 100644
+--- a/include/ui/GraphicBuffer.h
++++ b/include/ui/GraphicBuffer.h
+@@ -118,10 +118,10 @@ public:
+     static void dumpAllocationsToSystemLog();
+ 
+     // Flattenable protocol
+-    size_t getFlattenedSize() const;
+-    size_t getFdCount() const;
+-    status_t flatten(void*& buffer, size_t& size, int*& fds, size_t& count) const;
+-    status_t unflatten(void const*& buffer, size_t& size, int const*& fds, size_t& count);
++    virtual size_t getFlattenedSize() const;
++    virtual size_t getFdCount() const;
++    virtual status_t flatten(void*& buffer, size_t& size, int*& fds, size_t& count) const;
++    virtual status_t unflatten(void const*& buffer, size_t& size, int const*& fds, size_t& count);
+ 
+ private:
+     virtual ~GraphicBuffer();
+-- 
+2.7.4
+

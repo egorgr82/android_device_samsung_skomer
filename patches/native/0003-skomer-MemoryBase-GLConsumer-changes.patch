@@ -1,0 +1,283 @@
+From 0480ac96de02095af8565cec99f15a4c5121ef9c Mon Sep 17 00:00:00 2001
+From: egorgr82 <60542432+egorgr82@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 20:41:46 +0300
+Subject: [PATCH 3/3] skomer: MemoryBase, GLConsumer changes
+
+Change-Id: I8d52dcccd69dc3a03d42d4e2911eead265e13a75
+---
+ include/binder/MemoryBase.h |   2 +
+ libs/binder/MemoryBase.cpp  |  14 ++++
+ libs/gui/Android.mk         |   1 +
+ libs/gui/GLConsumer.cpp     | 181 +++++++++++++++++++++++++++++++++++++++++++-
+ 4 files changed, 197 insertions(+), 1 deletion(-)
+
+diff --git a/include/binder/MemoryBase.h b/include/binder/MemoryBase.h
+index 463e26d..bdb3e8b 100644
+--- a/include/binder/MemoryBase.h
++++ b/include/binder/MemoryBase.h
+@@ -33,6 +33,8 @@ public:
+     MemoryBase(const sp<IMemoryHeap>& heap, ssize_t offset, size_t size);
+     virtual ~MemoryBase();
+     virtual sp<IMemoryHeap> getMemory(ssize_t* offset, size_t* size) const;
++    // legacy STE camera HAL ABI (old ssize_t was long)
++    sp<IMemoryHeap> getMemory(long* offset, unsigned int* size) const;
+ 
+ protected:
+     size_t getSize() const { return mSize; }
+diff --git a/libs/binder/MemoryBase.cpp b/libs/binder/MemoryBase.cpp
+index 6604757..090605f 100644
+--- a/libs/binder/MemoryBase.cpp
++++ b/libs/binder/MemoryBase.cpp
+@@ -38,6 +38,13 @@ sp<IMemoryHeap> MemoryBase::getMemory(ssize_t* offset, size_t* size) const
+     return mHeap;
+ }
+ 
++sp<IMemoryHeap> MemoryBase::getMemory(long* offset, unsigned int* size) const
++{
++    if (offset) *offset = mOffset;
++    if (size)   *size = mSize;
++    return mHeap;
++}
++
+ MemoryBase::~MemoryBase()
+ {
+ }
+@@ -52,3 +59,10 @@ extern "C" void _ZN7android10MemoryBaseC1ERKNS_2spINS_11IMemoryHeapEEElj(void* o
+     _ZN7android10MemoryBaseC1ERKNS_2spINS_11IMemoryHeapEEEij(obj, h, o, size);
+ }
+ #endif
++
++// Legacy STE camera HAL ABI: old headers had ssize_t == long. On ARM32 the
++// calling convention is identical, so alias the old-style symbols to the current ones.
++__asm__(
++    ".global _ZN7android10MemoryBaseC2ERKNS_2spINS_11IMemoryHeapEEElj\n"
++    ".thumb_set _ZN7android10MemoryBaseC2ERKNS_2spINS_11IMemoryHeapEEElj, _ZN7android10MemoryBaseC2ERKNS_2spINS_11IMemoryHeapEEEij\n"
++);
+diff --git a/libs/gui/Android.mk b/libs/gui/Android.mk
+index 9770da2..2a415be 100644
+--- a/libs/gui/Android.mk
++++ b/libs/gui/Android.mk
+@@ -41,6 +41,7 @@ LOCAL_SHARED_LIBRARIES := \
+ 	libcutils \
+ 	libEGL \
+ 	libGLESv2 \
++	libhardware \
+ 	libsync \
+ 	libui \
+ 	libutils \
+diff --git a/libs/gui/GLConsumer.cpp b/libs/gui/GLConsumer.cpp
+index 778df4e..8261ccd 100644
+--- a/libs/gui/GLConsumer.cpp
++++ b/libs/gui/GLConsumer.cpp
+@@ -44,6 +44,10 @@
+ EGLAPI const char* eglQueryStringImplementationANDROID(EGLDisplay dpy, EGLint name);
+ #define CROP_EXT_STR "EGL_ANDROID_image_crop"
+ 
++#include <hardware/hardware.h>
++#include <hardware/copybit.h>
++#include <utils/Log.h>
++
+ namespace android {
+ 
+ // Macros for including the GLConsumer name in log messages
+@@ -365,6 +369,166 @@ status_t GLConsumer::releaseBufferLocked(int buf,
+     return err;
+ }
+ 
++// ---- NovaThor/STE: convert MB-format video frames to RGBA with copybit.
++// All state is process-global so the GLConsumer class layout (shared with
++// libsurfaceflinger) stays unchanged.
++#define STE_FMT_YCBCR42XMBN 14
++
++namespace {
++struct SteRegion : public copybit_region_t {
++    copybit_rect_t rect;
++    bool done;
++};
++
++int steRegionNext(copybit_region_t const* self, copybit_rect_t* r) {
++    SteRegion* sr = const_cast<SteRegion*>(static_cast<SteRegion const*>(self));
++    if (sr->done) return 0;
++    sr->done = true;
++    *r = sr->rect;
++    return 1;
++}
++
++struct SteBlit {
++    const void* owner;
++    sp<GraphicBuffer> buf[2];
++    const void* srcHandle[2];
++    int next;
++};
++
++struct SteState {
++    Mutex lock;
++    copybit_device_t* engine;
++    SteBlit slots[8];
++    int evict;
++    SteState() : engine(NULL), evict(0) {
++        for (int i = 0; i < 8; i++) {
++            slots[i].owner = NULL;
++            slots[i].srcHandle[0] = NULL;
++            slots[i].srcHandle[1] = NULL;
++            slots[i].next = 0;
++        }
++    }
++};
++
++SteState& steState() {
++    static SteState* st = new SteState();
++    return *st;
++}
++
++SteBlit* steFind(SteState& st, const void* owner, bool create) {
++    for (int i = 0; i < 8; i++) {
++        if (st.slots[i].owner == owner) return &st.slots[i];
++    }
++    if (!create) return NULL;
++    SteBlit* b = NULL;
++    for (int i = 0; i < 8; i++) {
++        if (st.slots[i].owner == NULL) { b = &st.slots[i]; break; }
++    }
++    if (b == NULL) {
++        b = &st.slots[st.evict];
++        st.evict = (st.evict + 1) % 8;
++    }
++    b->owner = owner;
++    b->buf[0] = NULL;
++    b->buf[1] = NULL;
++    b->srcHandle[0] = NULL;
++    b->srcHandle[1] = NULL;
++    b->next = 0;
++    return b;
++}
++
++// Returns the RGBA buffer with the converted frame, or NULL on failure.
++sp<GraphicBuffer> steConvert(const void* owner, const sp<GraphicBuffer>& src) {
++    SteState& st = steState();
++    Mutex::Autolock _l(st.lock);
++    if (st.engine == NULL) {
++        hw_module_t const* module;
++        if (hw_get_module(COPYBIT_HARDWARE_MODULE_ID, &module) == 0) {
++            copybit_open(module, &st.engine);
++        }
++        if (st.engine == NULL) {
++            ALOGE("STE: cannot open copybit");
++            return NULL;
++        }
++    }
++    SteBlit* b = steFind(st, owner, true);
++    int i = b->next;
++    if (b->buf[i] != NULL && (b->buf[i]->getWidth() != src->getWidth() ||
++            b->buf[i]->getHeight() != src->getHeight())) {
++        b->buf[i] = NULL;
++    }
++    if (b->buf[i] == NULL) {
++        sp<GraphicBuffer> nb = new GraphicBuffer(src->getWidth(),
++                src->getHeight(), PIXEL_FORMAT_RGBA_8888, src->getUsage());
++        if (nb->initCheck() != NO_ERROR) {
++            ALOGE("STE: cannot allocate RGBA buffer %ux%u",
++                    src->getWidth(), src->getHeight());
++            return NULL;
++        }
++        b->buf[i] = nb;
++    }
++    sp<GraphicBuffer> dst = b->buf[i];
++
++    copybit_image_t di;
++    memset(&di, 0, sizeof(di));
++    di.w = dst->getWidth();
++    di.h = dst->getHeight();
++    di.format = dst->getPixelFormat();
++    di.handle = (native_handle_t*) dst->getNativeBuffer()->handle;
++
++    copybit_image_t si;
++    memset(&si, 0, sizeof(si));
++    si.w = src->getWidth();
++    si.h = src->getHeight();
++    si.format = src->getPixelFormat();
++    si.handle = (native_handle_t*) src->getNativeBuffer()->handle;
++
++    copybit_rect_t dr;
++    dr.l = 0; dr.t = 0; dr.r = (int) dst->getWidth(); dr.b = (int) dst->getHeight();
++    copybit_rect_t sr;
++    sr.l = 0; sr.t = 0; sr.r = (int) src->getWidth(); sr.b = (int) src->getHeight();
++
++    SteRegion clip;
++    clip.next = steRegionNext;
++    clip.rect = dr;
++    clip.done = false;
++
++    st.engine->set_parameter(st.engine, COPYBIT_TRANSFORM, 0);
++    st.engine->set_parameter(st.engine, COPYBIT_PLANE_ALPHA, 0xFF);
++    st.engine->set_parameter(st.engine, COPYBIT_DITHER, COPYBIT_ENABLE);
++    int err = st.engine->stretch(st.engine, &di, &si, &dr, &sr, &clip);
++    if (err != 0) {
++        ALOGE("STE: copybit stretch failed err=%d", err);
++        return NULL;
++    }
++    b->srcHandle[i] = src->handle;
++    b->next = 1 - i;
++    return dst;
++}
++
++// For a converted frame the buffer to release back to the queue is the
++// original slot buffer, not our RGBA copy (otherwise stillTracking() fails
++// and the decoder never gets its buffers back).
++sp<GraphicBuffer> steReleaseBuffer(const void* owner,
++        const sp<GraphicBuffer>& cur, const sp<GraphicBuffer>& slotBuf) {
++    if (cur == NULL) return cur;
++    SteState& st = steState();
++    Mutex::Autolock _l(st.lock);
++    SteBlit* b = steFind(st, owner, false);
++    if (b == NULL) return cur;
++    for (int i = 0; i < 2; i++) {
++        if (b->buf[i] != NULL && b->buf[i]->handle == cur->handle) {
++            if (slotBuf != NULL && slotBuf->handle == b->srcHandle[i]) {
++                return slotBuf;
++            }
++            return cur;
++        }
++    }
++    return cur;
++}
++} // anonymous namespace
++// ---- end STE
++
+ status_t GLConsumer::updateAndReleaseLocked(const BufferQueue::BufferItem& item)
+ {
+     status_t err = NO_ERROR;
+@@ -392,6 +556,19 @@ status_t GLConsumer::updateAndReleaseLocked(const BufferQueue::BufferItem& item)
+     // ConsumerBase.
+     // We may have to do this even when item.mGraphicBuffer == NULL (which
+     // means the buffer was previously acquired).
++    // STE: convert MB-format frames to RGBA before creating the EGLImage.
++    if (mSlots[buf].mGraphicBuffer != NULL &&
++            mSlots[buf].mGraphicBuffer->getPixelFormat() == STE_FMT_YCBCR42XMBN) {
++        sp<GraphicBuffer> blit = steConvert(this, mSlots[buf].mGraphicBuffer);
++        if (blit == NULL) {
++            ST_LOGE("updateAndRelease: STE conversion failed");
++            releaseBufferLocked(buf, mSlots[buf].mGraphicBuffer,
++                    mEglDisplay, EGL_NO_SYNC_KHR);
++            return UNKNOWN_ERROR;
++        }
++        mEglSlots[buf].mEglImage = new EglImage(blit);
++    }
++
+     err = mEglSlots[buf].mEglImage->createIfNeeded(mEglDisplay, item.mCrop);
+     if (err != NO_ERROR) {
+         ST_LOGW("updateAndRelease: unable to createImage on display=%p slot=%d",
+@@ -421,7 +598,9 @@ status_t GLConsumer::updateAndReleaseLocked(const BufferQueue::BufferItem& item)
+     // release old buffer
+     if (mCurrentTexture != BufferQueue::INVALID_BUFFER_SLOT) {
+         status_t status = releaseBufferLocked(
+-                mCurrentTexture, mCurrentTextureImage->graphicBuffer(),
++                mCurrentTexture,
++                steReleaseBuffer(this, mCurrentTextureImage->graphicBuffer(),
++                        mSlots[mCurrentTexture].mGraphicBuffer),
+                 mEglDisplay, mEglSlots[mCurrentTexture].mEglFence);
+         if (status < NO_ERROR) {
+             ST_LOGE("updateAndRelease: failed to release buffer: %s (%d)",
+-- 
+2.7.4
+
