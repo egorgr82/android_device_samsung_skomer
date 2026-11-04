@@ -20,59 +20,73 @@
 
 * Description
 
-  This repository is for CM11 on Samsung X Cover 2 a.k.a Samsung Skomer.
-  It's still a work in progress.
+  Device tree for Android 5.1 (CM 12.1) on Samsung Galaxy Xcover 2
+  (GT-S7710, a.k.a. skomer).
+  Work in progress. Based on the CM 11 tree by flxo, with parts taken
+  from the sibling platform "golden" (Galaxy S3 Mini GT-I8190).
+
+  Platform changes (frameworks/base, frameworks/av, frameworks/native,
+  system/core, build, Camera2, Settings, Telephony) are NOT forked.
+  They are stored here as git patches in patches/ and applied with
+  patches/apply.sh.
 
 * How To Build
 
   - Make a workspace
 
-  $ mkdir -p ~/cyanogenmod
-  $ cd ~/cyanogenmod
+  $ mkdir -p ~/android/lineage
+  $ cd ~/android/lineage
 
 
-  - Do repo init & sync
+  - Do repo init
 
-  $ repo init -u git://github.com/CyanogenMod/android.git -b cm-11.0
+  $ repo init -u https://github.com/LineageOS/android.git -b cm-12.1
 
 
   - Create .repo/local_manifests/skomer.xml with the following content:
 
   <?xml version="1.0" encoding="UTF-8"?>
   <manifest>
-      <project name="flxo/android_device_samsung_skomer" path="device/samsung/skomer" />
-      <project name="flxo/android_kernel_samsung_skomer" path="kernel/samsung/skomer" revision="jellybean" />
-      <project name="flxo/android_vendor_samsung_skomer" path="vendor/samsung/skomer" />
+      <remote name="egor" fetch="https://github.com/egorgr82" />
+      <project name="android_device_samsung_skomer" path="device/samsung/skomer" remote="egor" revision="skomer-5.1" />
+      <project name="kernel_samsung_skomer" path="kernel/samsung/skomer" remote="egor" revision="l51" />
+      <project name="android_vendor_samsung_skomer" path="vendor/samsung/skomer" remote="egor" revision="l51" />
   </manifest>
+
+
+  - Sync
 
   $ repo sync
 
 
-  - Setup vendor
+  - Apply platform patches (once, on a clean tree)
 
-  $ ./vendor/cm/get-prebuilts
-
-
-  - Pull all not merged fixes from gerrit:
-  $ ./device/samsung/skomer/pull
+  $ bash device/samsung/skomer/patches/apply.sh
 
 
   - Setup environment
 
   $ source build/envsetup.sh
-  $ lunch cm_skomer-eng
+  $ lunch cm_skomer-userdebug
 
 
-  - Build CM11
+  - Build
 
   $ export USE_CCACHE=1
-  $ make -j4 bacon
+  $ mka bacon
 
+* Notes
+
+  patches/golden-reference contains patches from the golden tree
+  (NovaFusion), kept for reference only. They are not applied.
 
 * Thanks
 
   Oliver!
-  CyanogenMod
+  Felix (flxo)
+  CyanogenMod / LineageOS
+  NovaFusion (golden)
+  VanirAOSP (kernel)
   alquez
   modpunk
   dudeman1996
